@@ -110,15 +110,50 @@
             }
           </div>
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-2">3. Music Genre</label>
+          <div class="flex flex-wrap gap-2">
+            @for(genre of musicGenres; track genre) {
+            <button (click)="selectMusicGenre(genre)"
+              [class]="'px-3 py-1.5 rounded-full text-xs font-semibold transition-all ' + (selectedMusicGenre() === genre ? 'bg-pink-600 text-white shadow-lg' : 'bg-gray-700 hover:bg-gray-600 text-gray-300')">
+              {{ genre }}
+            </button>
+            }
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-2">4. Music Mood</label>
+          <div class="flex flex-wrap gap-2">
+            @for(mood of musicMoods; track mood) {
+            <button (click)="selectMusicMood(mood)"
+              [class]="'px-3 py-1.5 rounded-full text-xs font-semibold transition-all ' + (selectedMusicMood() === mood ? 'bg-pink-600 text-white shadow-lg' : 'bg-gray-700 hover:bg-gray-600 text-gray-300')">
+              {{ mood }}
+            </button>
+            }
+          </div>
+        </div>
       </div>
       <div class="space-y-6">
         <div>
-          <label for="topic" class="block text-sm font-medium text-gray-300">3. Enter Your Topic</label>
+          <label for="topic" class="block text-sm font-medium text-gray-300">5. Enter Your Topic</label>
           <div class="mt-2">
             <input type="text" name="topic" id="topic" (input)="updateTopic($event)" [value]="topic()"
               class="block w-full rounded-md border-0 bg-white/5 py-2 px-3 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-purple-500 sm:text-sm sm:leading-6"
               placeholder="e.g., The future of AI">
           </div>
+        </div>
+        <div>
+          <label for="props-upload" class="block text-sm font-medium text-gray-300 mb-2">6. Props (Optional - up to 3
+            images)</label>
+          <input type="file" id="props-upload" multiple accept="image/*" (change)="onPropsUpload($event)"
+            class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer">
+          @if (propsUrls().length > 0) {
+          <div class="mt-3 flex gap-2">
+            @for(url of propsUrls(); track url; let i = $index) {
+            <img [src]="url" alt="Prop {{ i + 1 }}" class="w-16 h-16 object-cover rounded border border-purple-500">
+            }
+          </div>
+          }
         </div>
         <div class="pt-6">
           <button (click)="generate()" [disabled]="!isFormValid()"
@@ -170,7 +205,26 @@
       </div>
       }
     </div>
-    <div class="text-center">
+
+    @if (musicResult()) {
+    <div class="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700">
+      <h3 class="text-xl font-bold text-white mb-3">🎵 Music Prompt</h3>
+      <div class="space-y-2 text-sm">
+        <p class="text-gray-300"><span class="font-semibold text-purple-400">Genre:</span> {{ musicResult()!.genre }}
+        </p>
+        <p class="text-gray-300"><span class="font-semibold text-purple-400">Mood:</span> {{ musicResult()!.mood }}</p>
+        <p class="text-gray-300"><span class="font-semibold text-purple-400">Duration:</span> {{ musicResult()!.duration
+          }}</p>
+        <p class="text-gray-400 mt-3 italic">"{{ musicResult()!.prompt }}"</p>
+      </div>
+    </div>
+    }
+
+    <div class="text-center space-y-4">
+      <button (click)="downloadBundle()"
+        class="rounded-md bg-gradient-to-r from-purple-500 to-pink-500 px-8 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-105">
+        📦 Download Complete Bundle
+      </button>
       <button (click)="resetState()"
         class="rounded-md bg-gray-700 px-6 py-3 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:bg-gray-600 hover:scale-105">
         Create Another

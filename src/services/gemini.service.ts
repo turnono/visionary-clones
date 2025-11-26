@@ -1,8 +1,9 @@
 import { Injectable, inject } from '@angular/core';
 import { GoogleGenAI, Type } from '@google/genai';
 import { ApiKeyService } from './api-key.service';
+import { ScriptResult, MusicParams, MusicResult } from '../models/bundle.model';
 
-// Types for structured data
+// Legacy Scene interface for backward compatibility
 export interface Scene {
   beat: string;
   script: string;
@@ -115,5 +116,52 @@ export class GeminiService {
 
     const base64ImageBytes = response.generatedImages[0].image.imageBytes;
     return `data:image/png;base64,${base64ImageBytes}`;
+  }
+
+  async generateMusicPrompt(params: MusicParams): Promise<MusicResult> {
+    const ai = this.ensureAiClient();
+    
+    const prompt = `Generate a detailed music prompt for a 24-second soundtrack.
+
+REQUIREMENTS:
+- Persona: ${params.persona}
+- Mood: ${params.mood}
+- Topic: ${params.topic}
+- Emotional Direction: ${params.emotionalDirection}
+
+Create a detailed music prompt that:
+1. Matches the persona's vibe and style
+2. Reflects the emotional direction
+3. Is 24 seconds long
+4. Is instrumental only (no vocals)
+5. Is TikTok/Reels-ready
+
+Return ONLY a JSON object with this structure:
+{
+  "prompt": "detailed music generation prompt",
+  "genre": "specific genre",
+  "mood": "specific mood",
+  "duration": "24s"
+}`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            prompt: { type: Type.STRING },
+            genre: { type: Type.STRING },
+            mood: { type: Type.STRING },
+            duration: { type: Type.STRING },
+          },
+          required: ['prompt', 'genre', 'mood', 'duration']
+        }
+      }
+    });
+
+    return JSON.parse(response.text.trim());
   }
 }
