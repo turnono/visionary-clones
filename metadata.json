@@ -1,0 +1,5 @@
+{
+  "name": "VisionaryClones",
+  "description": "An AI Video Factory that transforms a topic and a persona into a viral, 9:16 vertical video. It uses a multi-modal AI pipeline to generate scripts, create identity-locked storyboards, and render final video clips.",
+  "requestFramePermissions": []
+}
