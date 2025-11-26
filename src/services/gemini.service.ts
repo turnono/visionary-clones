@@ -1,7 +1,8 @@
 import { Injectable, inject } from '@angular/core';
 import { GoogleGenAI, Type } from '@google/genai';
 import { ApiKeyService } from './api-key.service';
-import { ScriptResult, MusicParams, MusicResult } from '../models/bundle.model';
+import { ScriptResult, MusicParams, MusicResult, MusicPromptModel, ScriptModel } from '../models/bundle.model';
+import { ImageModelQuality, getImageModel } from '../models/image-models';
 
 // Legacy Scene interface for backward compatibility
 export interface Scene {
@@ -45,6 +46,41 @@ export class GeminiService {
       reader.onload = () => resolve((reader.result as string).split(',')[1]);
       reader.onerror = error => reject(error);
     });
+  }
+
+  buildStoryboardPrompt(params: {
+    topic: string;
+    persona: string;
+    identityDescription: string;
+    sceneDescription: string;
+    sceneNumber: number;
+    props?: string[];
+  }): string {
+    const { topic, persona, identityDescription, sceneDescription, sceneNumber, props } = params;
+    
+    const cameraAngles = ['medium shot', 'close-up', 'wide shot'];
+    const cameraAngle = cameraAngles[sceneNumber % 3];
+    
+    let prompt = `Create a photorealistic 9:16 portrait image.
+
+SUBJECT: ${identityDescription}
+PERSONA STYLE: ${persona}
+SCENE: ${sceneDescription}
+TOPIC CONTEXT: ${topic}
+
+TECHNICAL REQUIREMENTS:
+- Camera angle: ${cameraAngle}
+- Aspect ratio: 9:16 vertical portrait
+- Lighting: Consistent, professional, cinematic
+- Color palette: Warm, vibrant, Instagram-ready
+- No text, logos, or watermarks
+- Perfect hands and facial features`;
+
+    if (props && props.length > 0) {
+      prompt += `\n\nPROPS TO INCLUDE: ${props.join(', ')}`;
+    }
+
+    return prompt;
   }
 
   async describeIdentity(image: File): Promise<string> {
@@ -100,28 +136,64 @@ export class GeminiService {
     return JSON.parse(response.text.trim());
   }
 
-  async generateStoryboardImage(visualPrompt: string, characterDescription: string): Promise<string> {
+  async generateStoryboardImage(
+    visualPrompt: string,
+    characterDescription: string,
+    modelQuality: ImageModelQuality = ImageModelQuality.BEST_QUALITY,
+    topic: string = '',
+    persona: string = '',
+    sceneNumber: number = 0,
+    props?: string[]
+  ): Promise<string> {
     const ai = this.ensureAiClient();
-    const fullPrompt = `${visualPrompt}, featuring a person who is ${characterDescription}. Hyper-realistic photo, cinematic lighting, dramatic. Vertical 9:16 aspect ratio.`;
+    const model = getImageModel(modelQuality);
     
-    const response = await ai.models.generateImages({
-      model: 'imagen-4.0-generate-001',
-      prompt: fullPrompt,
-      config: {
-        numberOfImages: 1,
-        outputMimeType: 'image/png',
-        aspectRatio: '9:16',
-      },
+    // Build enhanced prompt using buildStoryboardPrompt
+    const fullPrompt = this.buildStoryboardPrompt({
+      topic,
+      persona,
+      identityDescription: characterDescription,
+      sceneDescription: visualPrompt,
+      sceneNumber,
+      props
     });
+    
+    // Use appropriate API based on model type
+    if (model.isGeminiNative) {
+      // Gemini native image generation
+      const response = await ai.models.generateContent({
+        model: model.id,
+        contents: fullPrompt,
+      });
+      
+      // Extract image from response
+      for (const part of response.candidates[0].content.parts) {
+        if (part.inlineData) {
+          return `data:image/png;base64,${part.inlineData.data}`;
+        }
+      }
+      throw new Error('No image data in Gemini response');
+    } else {
+      // Imagen API
+      const response = await ai.models.generateImages({
+        model: model.id,
+        prompt: fullPrompt,
+        config: {
+          numberOfImages: 1,
+          outputMimeType: 'image/png',
+          aspectRatio: '9:16',
+        },
+      });
 
-    const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-    return `data:image/png;base64,${base64ImageBytes}`;
+      const base64ImageBytes = response.generatedImages[0].image.imageBytes;
+      return `data:image/png;base64,${base64ImageBytes}`;
+    }
   }
 
-  async generateMusicPrompt(params: MusicParams): Promise<MusicResult> {
+  async generateMusicPrompt(params: MusicParams): Promise<MusicPromptModel> {
     const ai = this.ensureAiClient();
     
-    const prompt = `Generate a detailed music prompt for a 24-second soundtrack.
+    const prompt = `Generate a detailed music prompt for a 24-second TikTok/Reels soundtrack.
 
 REQUIREMENTS:
 - Persona: ${params.persona}
@@ -129,19 +201,28 @@ REQUIREMENTS:
 - Topic: ${params.topic}
 - Emotional Direction: ${params.emotionalDirection}
 
-Create a detailed music prompt that:
-1. Matches the persona's vibe and style
-2. Reflects the emotional direction
-3. Is 24 seconds long
-4. Is instrumental only (no vocals)
-5. Is TikTok/Reels-ready
+Create a structured music prompt with:
+1. Genre matching the persona's vibe
+2. BPM range appropriate for the mood
+3. 24-second structure: intro (4s), build (8s), drop (8s), outro (4s)
+4. Keywords for music generation tools
+5. Instrumental only (no vocals)
 
-Return ONLY a JSON object with this structure:
+Return ONLY a JSON object matching this schema:
 {
-  "prompt": "detailed music generation prompt",
-  "genre": "specific genre",
+  "genre": "specific genre (trap/cinematic/afrobeat/lofi/ambient)",
   "mood": "specific mood",
-  "duration": "24s"
+  "duration": 24,
+  "bpm_range": [min_bpm, max_bpm],
+  "structure": {
+    "intro": 4,
+    "build": 8,
+    "drop": 8,
+    "outro": 4
+  },
+  "keywords": ["keyword1", "keyword2", "keyword3"],
+  "persona": "${params.persona}",
+  "topic": "${params.topic}"
 }`;
 
     const response = await ai.models.generateContent({
@@ -152,12 +233,30 @@ Return ONLY a JSON object with this structure:
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            prompt: { type: Type.STRING },
             genre: { type: Type.STRING },
             mood: { type: Type.STRING },
-            duration: { type: Type.STRING },
+            duration: { type: Type.NUMBER },
+            bpm_range: {
+              type: Type.ARRAY,
+              items: { type: Type.NUMBER }
+            },
+            structure: {
+              type: Type.OBJECT,
+              properties: {
+                intro: { type: Type.NUMBER },
+                build: { type: Type.NUMBER },
+                drop: { type: Type.NUMBER },
+                outro: { type: Type.NUMBER }
+              }
+            },
+            keywords: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING }
+            },
+            persona: { type: Type.STRING },
+            topic: { type: Type.STRING }
           },
-          required: ['prompt', 'genre', 'mood', 'duration']
+          required: ['genre', 'mood', 'duration', 'bpm_range', 'structure', 'keywords', 'persona', 'topic']
         }
       }
     });

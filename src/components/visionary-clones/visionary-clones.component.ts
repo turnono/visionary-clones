@@ -4,7 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { GeminiService, Scene } from '../../services/gemini.service';
 import { ApiKeyService } from '../../services/api-key.service';
 import { BundleService } from '../../services/bundle.service';
-import { ScriptResult, MusicResult } from '../../models/bundle.model';
+import { ScriptResult, MusicResult, MusicPromptModel, MetadataModel } from '../../models/bundle.model';
+import { ImageModelQuality, getImageModel } from '../../models/image-models';
 
 type GenerationState = 'idle' | 'identity' | 'script' | 'storyboard' | 'music' | 'done' | 'error';
 
@@ -41,7 +42,7 @@ export class VisionaryClonesComponent {
   script = signal<Scene[]>([]);
   scriptResult = signal<ScriptResult | null>(null);
   storyboardImages = signal<string[]>([]);
-  musicResult = signal<MusicResult | null>(null);
+  musicResult = signal<MusicResult | MusicPromptModel | null>(null);
   
   // Music selection
   selectedMusicGenre = signal<string>('Trap');
@@ -50,10 +51,23 @@ export class VisionaryClonesComponent {
   // Props
   propsFiles = signal<File[]>([]);
   propsUrls = signal<string[]>([]);
+  propsMetadata = signal<Array<{ title?: string }>>([]);
+  
+  // Image model selection
+  selectedImageModel = signal<ImageModelQuality>(ImageModelQuality.BEST_QUALITY);
+  
+  // Progress tracking
+  currentStep = signal<number>(0);
+  totalSteps = 4;
 
   readonly personas = ['Tech Consultant', 'Cape Town Rapper', 'Motivational Speaker', 'Storyteller', 'Teacher/Educator'];
   readonly musicGenres = ['Trap', 'Cinematic', 'Afrobeat', 'Lo-fi', 'Ambient'];
   readonly musicMoods = ['Calm', 'Confident', 'Motivational', 'Dramatic'];
+  readonly imageModelQualities = [
+    { value: ImageModelQuality.BEST_QUALITY, label: 'Best Quality', description: 'Imagen 4 - Best photorealism' },
+    { value: ImageModelQuality.FAST, label: 'Fast', description: 'Gemini 2.5 Flash - Quick generation' },
+    { value: ImageModelQuality.ARTISTIC, label: 'Artistic', description: 'Gemini 3 Pro - 4K capable' }
+  ];
 
   onFileChange(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -134,25 +148,39 @@ export class VisionaryClonesComponent {
     this.errorMessage.set('');
 
     try {
-      this.loadingMessage.set('Phase 1/3: Analyzing your identity...');
+      this.currentStep.set(1);
+      this.loadingMessage.set('Step 1/4: Analyzing your identity...');
       const characterDescription = await this.geminiService.describeIdentity(this.referenceImageFile()!);
 
       this.generationState.set('script');
-      this.loadingMessage.set('Phase 2/4: Writing your viral script...');
+      this.currentStep.set(2);
+      this.loadingMessage.set('Step 2/4: Writing your viral script...');
       const scriptResult = await this.geminiService.generateScript(this.topic(), this.selectedPersona());
       this.script.set(scriptResult.scenes);
 
       this.generationState.set('storyboard');
+      this.currentStep.set(3);
       const generatedImages: string[] = [];
+      const propTitles = this.propsMetadata().map(p => p.title).filter(Boolean) as string[];
+      
       for (const [index, scene] of this.script().entries()) {
-        this.loadingMessage.set(`Phase 3/4: Generating storyboard ${index + 1} of 3...`);
-        const image = await this.geminiService.generateStoryboardImage(scene.visual_prompt, characterDescription);
+        this.loadingMessage.set(`Step 3/4: Generating storyboard ${index + 1} of 3...`);
+        const image = await this.geminiService.generateStoryboardImage(
+          scene.visual_prompt,
+          characterDescription,
+          this.selectedImageModel(),
+          this.topic(),
+          this.selectedPersona(),
+          index,
+          propTitles.length > 0 ? propTitles : undefined
+        );
         generatedImages.push(image);
         this.storyboardImages.set([...generatedImages]);
       }
 
       this.generationState.set('music');
-      this.loadingMessage.set('Phase 4/4: Creating your music prompt...');
+      this.currentStep.set(4);
+      this.loadingMessage.set('Step 4/4: Creating your music prompt...');
       const musicResult = await this.geminiService.generateMusicPrompt({
         persona: this.selectedPersona(),
         mood: this.selectedMusicMood(),
@@ -175,6 +203,16 @@ export class VisionaryClonesComponent {
 
   selectMusicMood(mood: string): void {
     this.selectedMusicMood.set(mood);
+  }
+
+  selectImageModel(quality: ImageModelQuality): void {
+    this.selectedImageModel.set(quality);
+  }
+
+  updatePropMetadata(index: number, title: string): void {
+    const metadata = this.propsMetadata();
+    metadata[index] = { title };
+    this.propsMetadata.set([...metadata]);
   }
 
   onPropsUpload(event: Event): void {
@@ -203,6 +241,8 @@ export class VisionaryClonesComponent {
       return;
     }
 
+    const selectedModel = getImageModel(this.selectedImageModel());
+
     await this.bundleService.createAndDownloadBundle({
       script: {
         hook: this.script()[0]?.script || '',
@@ -221,12 +261,15 @@ export class VisionaryClonesComponent {
       },
       props: this.propsUrls(),
       metadata: {
+        timestamp: Date.now(),
         persona: this.selectedPersona(),
         topic: this.topic(),
         musicGenre: this.selectedMusicGenre(),
         musicMood: this.selectedMusicMood(),
-        generatedAt: new Date().toISOString(),
-        version: '1.0'
+        image_model_used: selectedModel.name,
+        script_model_used: 'gemini-2.5-flash',
+        music_prompt_version: 'v1.1',
+        props_count: this.propsFiles().length
       }
     });
   }

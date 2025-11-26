@@ -132,10 +132,22 @@
             }
           </div>
         </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-2">5. Image Quality</label>
+          <div class="flex flex-wrap gap-2">
+            @for(model of imageModelQualities; track model.value) {
+            <button (click)="selectImageModel(model.value)"
+              [class]="'px-3 py-1.5 rounded-full text-xs font-semibold transition-all ' + (selectedImageModel() === model.value ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-700 hover:bg-gray-600 text-gray-300')"
+              [title]="model.description">
+              {{ model.label }}
+            </button>
+            }
+          </div>
+        </div>
       </div>
       <div class="space-y-6">
         <div>
-          <label for="topic" class="block text-sm font-medium text-gray-300">5. Enter Your Topic</label>
+          <label for="topic" class="block text-sm font-medium text-gray-300">6. Enter Your Topic</label>
           <div class="mt-2">
             <input type="text" name="topic" id="topic" (input)="updateTopic($event)" [value]="topic()"
               class="block w-full rounded-md border-0 bg-white/5 py-2 px-3 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-purple-500 sm:text-sm sm:leading-6"
@@ -143,7 +155,7 @@
           </div>
         </div>
         <div>
-          <label for="props-upload" class="block text-sm font-medium text-gray-300 mb-2">6. Props (Optional - up to 3
+          <label for="props-upload" class="block text-sm font-medium text-gray-300 mb-2">7. Props (Optional - up to 3
             images)</label>
           <input type="file" id="props-upload" multiple accept="image/*" (change)="onPropsUpload($event)"
             class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer">
