@@ -6,6 +6,8 @@ import { ApiKeyService } from '../../services/api-key.service';
 import { BundleService } from '../../services/bundle.service';
 import { ScriptResult, MusicResult, MusicPromptModel, MetadataModel } from '../../models/bundle.model';
 import { ImageModelQuality, getImageModel } from '../../models/image-models';
+import { getPersonaPreset } from '../../models/persona-presets';
+import JSZip from 'jszip';
 
 type GenerationState = 'idle' | 'identity' | 'script' | 'storyboard' | 'music' | 'done' | 'error';
 
@@ -59,8 +61,20 @@ export class VisionaryClonesComponent {
   // Progress tracking
   currentStep = signal<number>(0);
   totalSteps = 4;
+  
+  // Music intensity (v1.2)
+  musicIntensity = signal<number>(3); // Default: medium
+  
+  // BPM range mapping for intensity
+  private readonly INTENSITY_BPM_MAP: Record<number, [number, number]> = {
+    1: [60, 75],
+    2: [70, 85],
+    3: [80, 95],
+    4: [90, 105],
+    5: [100, 115]
+  };
 
-  readonly personas = ['Tech Consultant', 'Cape Town Rapper', 'Motivational Speaker', 'Storyteller', 'Teacher/Educator'];
+  readonly personas = ['Cinematic Mode', 'Tech Consultant', 'Cape Town Rapper', 'Motivational Speaker', 'Storyteller', 'Teacher/Educator'];
   readonly musicGenres = ['Trap', 'Cinematic', 'Afrobeat', 'Lo-fi', 'Ambient'];
   readonly musicMoods = ['Calm', 'Confident', 'Motivational', 'Dramatic'];
   readonly imageModelQualities = [
@@ -115,10 +129,18 @@ export class VisionaryClonesComponent {
 
   selectPersona(persona: string): void {
     this.selectedPersona.set(persona);
+    
+    // v1.2: Auto-populate music defaults from persona preset
+    const preset = getPersonaPreset(persona);
+    if (preset) {
+      this.selectedMusicGenre.set(preset.music_defaults.genre);
+      this.selectedMusicMood.set(preset.music_defaults.mood);
+    }
   }
 
   isFormValid(): boolean {
-    return !!this.referenceImageFile() && this.topic().trim().length > 0 && this.hasApiKey();
+    // v1.3: Image and Persona are now optional. Only Topic and API Key are required.
+    return this.topic().trim().length > 0 && this.hasApiKey();
   }
 
   hasApiKey(): boolean {
@@ -149,13 +171,26 @@ export class VisionaryClonesComponent {
 
     try {
       this.currentStep.set(1);
-      this.loadingMessage.set('Step 1/4: Analyzing your identity...');
-      const characterDescription = await this.geminiService.describeIdentity(this.referenceImageFile()!);
+      
+      // v1.3: Optional Identity Analysis
+      let characterDescription = '';
+      if (this.referenceImageFile()) {
+        this.loadingMessage.set('Step 1/4: Analyzing your identity...');
+        characterDescription = await this.geminiService.describeIdentity(this.referenceImageFile()!);
+      } else {
+        this.loadingMessage.set('Step 1/4: Skipping identity analysis (Movie Mode)...');
+        // Small delay to show the step
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
 
       this.generationState.set('script');
       this.currentStep.set(2);
       this.loadingMessage.set('Step 2/4: Writing your viral script...');
-      const scriptResult = await this.geminiService.generateScript(this.topic(), this.selectedPersona());
+      
+      // v1.3: Handle optional persona
+      const persona = this.selectedPersona() === 'Cinematic Mode' ? undefined : this.selectedPersona();
+      const scriptResult = await this.geminiService.generateScript(this.topic(), persona);
+      
       this.script.set(scriptResult.scenes);
 
       this.generationState.set('storyboard');
@@ -170,9 +205,10 @@ export class VisionaryClonesComponent {
           characterDescription,
           this.selectedImageModel(),
           this.topic(),
-          this.selectedPersona(),
+          persona || '', // Pass empty string if undefined
           index,
-          propTitles.length > 0 ? propTitles : undefined
+          propTitles.length > 0 ? propTitles : undefined,
+          scriptResult.global_visual_style // v1.3: Pass global style
         );
         generatedImages.push(image);
         this.storyboardImages.set([...generatedImages]);
@@ -182,7 +218,7 @@ export class VisionaryClonesComponent {
       this.currentStep.set(4);
       this.loadingMessage.set('Step 4/4: Creating your music prompt...');
       const musicResult = await this.geminiService.generateMusicPrompt({
-        persona: this.selectedPersona(),
+        persona: persona || 'Cinematic',
         mood: this.selectedMusicMood(),
         topic: this.topic(),
         emotionalDirection: scriptResult.scenes[0]?.script || ''
@@ -213,6 +249,22 @@ export class VisionaryClonesComponent {
     const metadata = this.propsMetadata();
     metadata[index] = { title };
     this.propsMetadata.set([...metadata]);
+  }
+
+  // v1.2: Music intensity methods
+  updateMusicIntensity(event: Event): void {
+    const value = parseInt((event.target as HTMLInputElement).value);
+    this.musicIntensity.set(value);
+  }
+
+  getBpmRangeForIntensity(intensity: number): [number, number] {
+    return this.INTENSITY_BPM_MAP[intensity] || [80, 95];
+  }
+
+  // v1.2: Progress step names
+  getStepName(step: number): string {
+    const steps = ['Identity Analysis', 'Script Writing', 'Storyboard Generation', 'Music Creation'];
+    return steps[step - 1] || '';
   }
 
   onPropsUpload(event: Event): void {
@@ -282,6 +334,8 @@ export class VisionaryClonesComponent {
     this.musicResult.set(null);
     this.propsFiles.set([]);
     this.propsUrls.set([]);
+    this.propsMetadata.set([]);
+    this.currentStep.set(0);
     this.errorMessage.set('');
     this.loadingMessage.set('');
     this.referenceImageFile.set(null);
@@ -297,5 +351,50 @@ export class VisionaryClonesComponent {
     if (propsInput) {
       propsInput.value = '';
     }
+  }
+
+  // v1.2: Individual download methods
+  async downloadScriptOnly(): Promise<void> {
+    if (!this.script().length) return;
+    
+    const scriptData = {
+      hook: this.script()[0]?.script || '',
+      flow: this.script()[1]?.script || '',
+      punchline: this.script()[2]?.script || ''
+    };
+    
+    const blob = new Blob([JSON.stringify(scriptData, null, 2)], { type: 'application/json' });
+    this.downloadBlob(blob, 'script.json');
+  }
+
+  async downloadStoryboardsOnly(): Promise<void> {
+    if (!this.storyboardImages().length) return;
+    
+    const zip = new JSZip();
+    this.storyboardImages().forEach((img, i) => {
+      const base64 = img.split(',')[1];
+      zip.file(`scene${i + 1}.png`, base64, { base64: true });
+    });
+    
+    const blob = await zip.generateAsync({ type: 'blob' });
+    this.downloadBlob(blob, 'storyboards.zip');
+  }
+
+  async downloadMusicPromptOnly(): Promise<void> {
+    if (!this.musicResult()) return;
+    
+    const blob = new Blob([JSON.stringify(this.musicResult(), null, 2)], { type: 'application/json' });
+    this.downloadBlob(blob, 'music-prompt.json');
+  }
+
+  private downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 }

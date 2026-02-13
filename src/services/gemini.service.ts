@@ -3,12 +3,17 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { ApiKeyService } from './api-key.service';
 import { ScriptResult, MusicParams, MusicResult, MusicPromptModel, ScriptModel } from '../models/bundle.model';
 import { ImageModelQuality, getImageModel } from '../models/image-models';
+import { getPersonaPreset } from '../models/persona-presets';
 
-// Legacy Scene interface for backward compatibility
 export interface Scene {
   beat: string;
   script: string;
   visual_prompt: string;
+}
+
+export interface ScriptGenerationResult {
+  scenes: Scene[];
+  global_visual_style: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -50,34 +55,62 @@ export class GeminiService {
 
   buildStoryboardPrompt(params: {
     topic: string;
-    persona: string;
-    identityDescription: string;
+    persona?: string;
+    identityDescription?: string;
     sceneDescription: string;
     sceneNumber: number;
+    global_visual_style?: string;
     props?: string[];
   }): string {
-    const { topic, persona, identityDescription, sceneDescription, sceneNumber, props } = params;
+    const { topic, persona, identityDescription, sceneDescription, sceneNumber, global_visual_style, props } = params;
     
     const cameraAngles = ['medium shot', 'close-up', 'wide shot'];
     const cameraAngle = cameraAngles[sceneNumber % 3];
     
+    // Get persona preset for camera style (v1.2)
+    const preset = persona ? getPersonaPreset(persona) : null;
+    const cameraStyle = preset?.camera_style || 'professional, cinematic, 8k, highly detailed';
+    
+    // Construct the prompt components
+    let subjectPart = '';
+    if (identityDescription) {
+      subjectPart = `SUBJECT: ${identityDescription}`;
+    } else if (global_visual_style) {
+      // If no specific identity, the global style helps define the look
+      subjectPart = `SUBJECT: Consistent character matching the style: ${global_visual_style}`;
+    }
+
+    let stylePart = '';
+    if (persona) {
+      stylePart = `PERSONA STYLE: ${persona}`;
+    }
+    
+    let globalStylePart = '';
+    if (global_visual_style) {
+      globalStylePart = `GLOBAL VISUAL STYLE (MUST FOLLOW): ${global_visual_style}`;
+    }
+
     let prompt = `Create a photorealistic 9:16 portrait image.
 
-SUBJECT: ${identityDescription}
-PERSONA STYLE: ${persona}
+${subjectPart}
+${stylePart}
+${globalStylePart}
 SCENE: ${sceneDescription}
 TOPIC CONTEXT: ${topic}
 
 TECHNICAL REQUIREMENTS:
 - Camera angle: ${cameraAngle}
+- Camera style: ${cameraStyle}
 - Aspect ratio: 9:16 vertical portrait
 - Lighting: Consistent, professional, cinematic
 - Color palette: Warm, vibrant, Instagram-ready
 - No text, logos, or watermarks
 - Perfect hands and facial features`;
 
+    // v1.2: Include props in scene description
     if (props && props.length > 0) {
-      prompt += `\n\nPROPS TO INCLUDE: ${props.join(', ')}`;
+      prompt += `\n\nINCLUDE THESE ELEMENTS: ${props.join(', ')}.
+These should be naturally integrated into the scene, either in hand, on a surface, or visible in the frame.`;
     }
 
     return prompt;
@@ -104,9 +137,24 @@ TECHNICAL REQUIREMENTS:
     return response.text.trim();
   }
 
-  async generateScript(topic: string, persona: string): Promise<{ scenes: Scene[] }> {
+  async generateScript(topic: string, persona?: string): Promise<ScriptGenerationResult> {
     const ai = this.ensureAiClient();
-    const prompt = `You are a viral video scriptwriter. Your persona is a ${persona}. The topic is "${topic}". Generate a 24-second vertical video script for TikTok/Reels, split into three 8-second beats: The Hook, The Flow/Insight, and The Punchline. For each beat, provide a short, evocative visual prompt for an AI image generator. Return ONLY a JSON object.`;
+    const personaContext = persona ? `Your persona is a ${persona}.` : "You are a Cinematic Director creating a viral movie scene.";
+    
+    const prompt = `You are a viral video scriptwriter. ${personaContext} The topic is "${topic}". 
+    
+    Generate a 24-second vertical video script for TikTok/Reels, split into three 8-second beats: The Hook, The Flow/Insight, and The Punchline.
+    
+    For each beat, provide:
+    1. "script": The spoken dialog/voiceover (must be short enough to fit in 8 seconds).
+    2. "visual_prompt": A DETAILED VEO3 VIDEO GENERATION PROMPT. 
+       - It MUST describe the visual scene, lighting, and camera angle.
+       - It MUST explicitly include the spoken dialog as a direct instruction.
+       - EXAMPLE FORMAT: "Cinematic medium shot of a [persona description] in a [setting], speaking directly to the camera with confidence. The subject is saying: '[exact script text]'. Professional lighting, 4k, high detail."
+    
+    Additionally, generate a "global_visual_style" field. This should be a detailed description of the overall visual aesthetic, color grading, lighting, and main character appearance (if any) that should be CONSISTENT across all three scenes. This ensures the 3 scenes look like they belong to the same movie.
+
+    Return ONLY a JSON object.`;
     
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -127,8 +175,10 @@ TECHNICAL REQUIREMENTS:
                 },
                 required: ['beat', 'script', 'visual_prompt']
               }
-            }
-          }
+            },
+            global_visual_style: { type: Type.STRING }
+          },
+          required: ['scenes', 'global_visual_style']
         }
       }
     });
@@ -143,7 +193,8 @@ TECHNICAL REQUIREMENTS:
     topic: string = '',
     persona: string = '',
     sceneNumber: number = 0,
-    props?: string[]
+    props?: string[],
+    globalVisualStyle?: string
   ): Promise<string> {
     const ai = this.ensureAiClient();
     const model = getImageModel(modelQuality);
@@ -155,6 +206,7 @@ TECHNICAL REQUIREMENTS:
       identityDescription: characterDescription,
       sceneDescription: visualPrompt,
       sceneNumber,
+      global_visual_style: globalVisualStyle,
       props
     });
     
@@ -240,6 +292,7 @@ Return ONLY a JSON object matching this schema:
               type: Type.ARRAY,
               items: { type: Type.NUMBER }
             },
+            intensity: { type: Type.NUMBER },  // NEW in v1.2
             structure: {
               type: Type.OBJECT,
               properties: {
@@ -256,7 +309,7 @@ Return ONLY a JSON object matching this schema:
             persona: { type: Type.STRING },
             topic: { type: Type.STRING }
           },
-          required: ['genre', 'mood', 'duration', 'bpm_range', 'structure', 'keywords', 'persona', 'topic']
+          required: ['genre', 'mood', 'duration', 'bpm_range', 'intensity', 'structure', 'keywords', 'persona', 'topic']
         }
       }
     });

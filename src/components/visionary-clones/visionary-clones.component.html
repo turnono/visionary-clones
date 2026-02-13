@@ -67,10 +67,26 @@
       }
     </div>
 
+    <!-- v1.2: Progress Bar -->
+    @if (generationState() !== 'idle' && generationState() !== 'error') {
+    <div class="mb-8 bg-gray-800/30 rounded-lg p-4 border border-gray-700">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium text-gray-300">Step {{ currentStep() }} of {{ totalSteps }}</span>
+        <span class="text-sm text-purple-400">{{ getStepName(currentStep()) }}</span>
+      </div>
+      <div class="w-full bg-gray-700 rounded-full h-2.5">
+        <div
+          class="bg-gradient-to-r from-purple-500 to-pink-500 h-2.5 rounded-full transition-all duration-500 ease-out"
+          [style.width.%]="(currentStep() / totalSteps) * 100"></div>
+      </div>
+    </div>
+    }
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
       <div class="space-y-6">
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">1. Upload Your "Identity Lock" Portrait</label>
+          <label class="block text-sm font-medium text-gray-300 mb-2">1. Upload Your "Identity Lock" Portrait
+            (Optional)</label>
           <div
             class="mt-2 flex justify-center rounded-lg border border-dashed bg-gray-900/50 px-6 py-10 transition-colors"
             [class]="isDragging() ? 'border-purple-500' : 'border-gray-600'" (dragover)="onDragOver($event)"
@@ -133,7 +149,25 @@
           </div>
         </div>
         <div>
-          <label class="block text-sm font-medium text-gray-300 mb-2">5. Image Quality</label>
+          <label class="block text-sm font-medium text-gray-300 mb-2">5. Music Duration</label>
+          <input type="text" value="24 seconds" readonly
+            class="block w-full rounded-md bg-gray-800 text-gray-400 px-3 py-2 cursor-not-allowed">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-2">
+            6. Music Intensity: {{ musicIntensity() }} ({{ getBpmRangeForIntensity(musicIntensity())[0] }}-{{
+            getBpmRangeForIntensity(musicIntensity())[1] }} BPM)
+          </label>
+          <input type="range" min="1" max="5" [value]="musicIntensity()" (input)="updateMusicIntensity($event)"
+            class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+          <div class="flex justify-between text-xs text-gray-400 mt-1">
+            <span>Calm (60-75)</span>
+            <span>Medium (80-95)</span>
+            <span>Energetic (100-115)</span>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-300 mb-2">7. Image Quality</label>
           <div class="flex flex-wrap gap-2">
             @for(model of imageModelQualities; track model.value) {
             <button (click)="selectImageModel(model.value)"
@@ -145,17 +179,19 @@
           </div>
         </div>
       </div>
+
       <div class="space-y-6">
         <div>
-          <label for="topic" class="block text-sm font-medium text-gray-300">6. Enter Your Topic</label>
+          <label for="topic" class="block text-sm font-medium text-gray-300">8. Enter Your Topic</label>
           <div class="mt-2">
-            <input type="text" name="topic" id="topic" (input)="updateTopic($event)" [value]="topic()"
+            <textarea name="topic" id="topic" (input)="updateTopic($event)" [value]="topic()" rows="3"
               class="block w-full rounded-md border-0 bg-white/5 py-2 px-3 text-white shadow-sm ring-1 ring-inset ring-white/10 focus:ring-2 focus:ring-inset focus:ring-purple-500 sm:text-sm sm:leading-6"
-              placeholder="e.g., The future of AI">
+              placeholder="e.g., The future of AI"></textarea>
           </div>
         </div>
+
         <div>
-          <label for="props-upload" class="block text-sm font-medium text-gray-300 mb-2">7. Props (Optional - up to 3
+          <label for="props-upload" class="block text-sm font-medium text-gray-300 mb-2">9. Props (Optional - up to 3
             images)</label>
           <input type="file" id="props-upload" multiple accept="image/*" (change)="onPropsUpload($event)"
             class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 file:cursor-pointer">
@@ -232,11 +268,28 @@
     </div>
     }
 
-    <div class="text-center space-y-4">
+    <div class="flex flex-col items-center gap-4 mt-8">
       <button (click)="downloadBundle()"
-        class="rounded-md bg-gradient-to-r from-purple-500 to-pink-500 px-8 py-4 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:scale-105">
+        class="rounded-md bg-gradient-to-r from-purple-500 to-pink-500 px-8 py-4 text-lg font-semibold text-white shadow-lg hover:shadow-xl transition-all">
         📦 Download Complete Bundle
       </button>
+
+      <!-- v1.2: Individual download options -->
+      <div class="flex flex-wrap gap-3 justify-center">
+        <button (click)="downloadScriptOnly()"
+          class="text-sm px-4 py-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors">
+          📄 Script Only
+        </button>
+        <button (click)="downloadStoryboardsOnly()"
+          class="text-sm px-4 py-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors">
+          🎨 Storyboards
+        </button>
+        <button (click)="downloadMusicPromptOnly()"
+          class="text-sm px-4 py-2 rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors">
+          🎵 Music Prompt
+        </button>
+      </div>
+
       <button (click)="resetState()"
         class="rounded-md bg-gray-700 px-6 py-3 text-lg font-semibold text-white shadow-lg transition-transform duration-200 hover:bg-gray-600 hover:scale-105">
         Create Another

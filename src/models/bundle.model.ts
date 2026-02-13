@@ -36,6 +36,7 @@ export interface MusicPromptModel {
   mood: string;
   duration: number;
   bpm_range: [number, number];
+  intensity: number;  // NEW in v1.2: 1-5 scale
   structure: {
     intro: number;
     build: number;

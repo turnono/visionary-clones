@@ -1,3 +1,5 @@
+// CRITICAL: DO NOT CHANGE THE AI MODELS DEFINED IN THIS FILE.
+// The user has manually configured these for specific internal models (Nano Banana).
 export enum ImageModelQuality {
   BEST_QUALITY = 'best',
   FAST = 'fast',
@@ -24,18 +26,18 @@ export const IMAGE_MODELS: Record<ImageModelQuality, ImageModel> = {
   },
   [ImageModelQuality.FAST]: {
     id: 'gemini-2.5-flash-image',
-    name: 'Gemini 2.5 Flash Image',
+    name: 'Nano Banana',
     quality: ImageModelQuality.FAST,
     description: 'Fast generation, 1024px',
     maxResolution: '1024x1024',
     isGeminiNative: true
   },
   [ImageModelQuality.ARTISTIC]: {
-    id: 'gemini-3-pro-image',
-    name: 'Gemini 3 Pro Image',
+    id: 'gemini-3-pro-image-preview',
+    name: 'Nano Banana Pro',
     quality: ImageModelQuality.ARTISTIC,
     description: 'Professional quality, 4K capable',
-    maxResolution: '4096x4096',
+    maxResolution: '4096x4096', 
     isGeminiNative: true
   }
 };
